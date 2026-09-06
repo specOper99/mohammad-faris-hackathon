@@ -38,12 +38,13 @@ fi
 
 echo "waiting for migrations..."
 j=0
-until php artisan migrate:status >/dev/null 2>&1; do
+until php artisan migrate:status; do
   j=$((j + 1))
   if [ "$j" -ge 60 ]; then
     echo "migrations not ready after 120s"
     exit 1
   fi
+  echo "migrations not ready yet (${j})"
   sleep 2
 done
 echo "migrations ready"
