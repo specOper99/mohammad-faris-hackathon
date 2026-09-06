@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_sqlite, pdo_pgsql, intl
+          coverage: none
+      - name: Install
+        run: composer install --prefer-dist --no-interaction
+      - name: Pint
+        run: vendor/bin/pint --test
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --memory-limit=1G
+      - name: Pest
+        run: php artisan test
