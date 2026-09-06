@@ -8,6 +8,15 @@ DB_DATABASE="${DB_DATABASE:-exoplanet}"
 DB_USERNAME="${DB_USERNAME:-exoplanet}"
 DB_PASSWORD="${DB_PASSWORD:-exoplanet}"
 
+mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
+chmod -R ug+rwx storage bootstrap/cache 2>/dev/null || true
+
+echo "composer install"
+composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+rm -f bootstrap/cache/packages.php bootstrap/cache/services.php
+php artisan package:discover --ansi || true
+
 echo "waiting for postgres at ${DB_HOST}:${DB_PORT}/${DB_DATABASE}..."
 i=0
 until php -r "
@@ -31,8 +40,15 @@ try {
 done
 echo "postgres ready"
 
+if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
+  echo "APP_KEY empty — generating"
+  php artisan key:generate --force
+fi
+
 if [ "$1" = "php-fpm" ]; then
+  echo "running migrations"
   php artisan migrate --force
+  echo "starting php-fpm"
   exec php-fpm
 fi
 

@@ -14,5 +14,6 @@ done
 
 mc mb -p local/exoplanet-files || true
 mc anonymous set none local/exoplanet-files || true
-mc cors set local/exoplanet-files /config/cors.xml || echo "cors set skipped (bucket still usable)"
+# Bucket CORS API not implemented on this MinIO build.
+# Browser CORS comes from MINIO_API_CORS_ALLOW_ORIGIN on the minio service.
 echo "minio ready"

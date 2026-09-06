@@ -8,6 +8,8 @@ RUN apk add --no-cache \
     libjpeg-turbo-dev \
     libpng-dev \
     linux-headers \
+    unzip \
+    git \
     $PHPIZE_DEPS \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install intl pdo_pgsql zip opcache pcntl gd
@@ -19,7 +21,7 @@ WORKDIR /var/www/html
 COPY docker/php.ini /usr/local/etc/php/conf.d/exoplanet.ini
 COPY docker/php-fpm.conf /usr/local/etc/php-fpm.d/zz-exoplanet.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 
 COPY . .
 RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \

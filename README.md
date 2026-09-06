@@ -41,6 +41,8 @@ vendor/bin/phpstan analyse
 
 Pest uses sqlite `:memory:`. Schema stays Postgres-compatible.
 
+Windows: bind-mount hides image `vendor`. Compose uses named volume `php_vendor` and runs `composer install` if autoload is missing. First `docker compose up --build` can take a few minutes. If PHP exits 255: `docker compose logs php` after `postgres ready`. Empty `APP_KEY` is generated in the container.
+
 ## Queue / schedule
 
 Compose already runs `queue:work --tries=3 --timeout=120` and `schedule:work`.

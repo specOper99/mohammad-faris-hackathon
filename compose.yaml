@@ -22,6 +22,11 @@ x-app-env: &app-env
   SESSION_DRIVER: database
   LOG_CHANNEL: stderr
 
+x-app-volumes: &app-volumes
+  - ./:/var/www/html
+  - php_vendor:/var/www/html/vendor
+  - php_bootstrap_cache:/var/www/html/bootstrap/cache
+
 services:
   nginx:
     image: nginx:1.27-alpine
@@ -40,9 +45,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     restart: unless-stopped
-    volumes:
-      - ./:/var/www/html
-      - ./docker/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+    volumes: *app-volumes
     env_file: .env
     environment:
       <<: *app-env
@@ -56,7 +59,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 40
-      start_period: 40s
+      start_period: 120s
 
   queue:
     build:
@@ -64,9 +67,7 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     command: php artisan queue:work --tries=3 --timeout=120
-    volumes:
-      - ./:/var/www/html
-      - ./docker/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+    volumes: *app-volumes
     env_file: .env
     environment:
       <<: *app-env
@@ -82,9 +83,7 @@ services:
       dockerfile: docker/Dockerfile
     restart: unless-stopped
     command: php artisan schedule:work
-    volumes:
-      - ./:/var/www/html
-      - ./docker/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+    volumes: *app-volumes
     env_file: .env
     environment:
       <<: *app-env
@@ -135,11 +134,11 @@ services:
       MINIO_ROOT_PASSWORD: minio12345
     volumes:
       - ./docker/minio-init.sh:/init.sh:ro
-      - ./docker/minio-cors.xml:/config/cors.xml:ro
     entrypoint: ["/bin/sh", "/init.sh"]
 
   mailpit:
     image: axllent/mailpit:latest
+    restart: unless-stopped
     ports:
       - "8025:8025"
       - "1025:1025"
@@ -147,3 +146,5 @@ services:
 volumes:
   pgdata:
   minio:
+  php_vendor:
+  php_bootstrap_cache:
