@@ -13,8 +13,9 @@ docker compose up --build
 
 - API: http://localhost:8080
 - Health: http://localhost:8080/up and http://localhost:8080/api/v1/health/ready
-- OpenAPI (local): http://localhost:8080/docs/api
+- OpenAPI (local): http://localhost:8080/docs or http://localhost:8080/docs/api
 - Mailpit: http://localhost:8025
+- Postgres (host): localhost:5433 (container still 5432)
 - MinIO console: http://localhost:9001 (`minio` / `minio12345`)
 
 Seed admin: `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` (min 10 chars). Default `admin@localhost` / `AdminPass1x`.

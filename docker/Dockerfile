@@ -4,9 +4,13 @@ RUN apk add --no-cache \
     icu-dev \
     postgresql-dev \
     libzip-dev \
+    freetype-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
     linux-headers \
     $PHPIZE_DEPS \
-    && docker-php-ext-install intl pdo_pgsql zip opcache pcntl
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install intl pdo_pgsql zip opcache pcntl gd
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 

@@ -1,3 +1,27 @@
+x-app-env: &app-env
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_DATABASE: exoplanet
+  DB_USERNAME: exoplanet
+  DB_PASSWORD: exoplanet
+  FILESYSTEM_DISK: s3
+  AWS_ACCESS_KEY_ID: minio
+  AWS_SECRET_ACCESS_KEY: minio12345
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_BUCKET: exoplanet-files
+  AWS_ENDPOINT: http://minio:9000
+  AWS_URL: http://localhost:9000
+  AWS_USE_PATH_STYLE_ENDPOINT: "true"
+  AWS_PUBLIC_ENDPOINT: http://localhost:9000
+  MAIL_MAILER: smtp
+  MAIL_HOST: mailpit
+  MAIL_PORT: "1025"
+  QUEUE_CONNECTION: database
+  CACHE_STORE: database
+  SESSION_DRIVER: database
+  LOG_CHANNEL: stderr
+
 services:
   nginx:
     image: nginx:1.27-alpine
@@ -7,7 +31,8 @@ services:
       - ./:/var/www/html
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - php
+      php:
+        condition: service_started
 
   php:
     build:
@@ -15,10 +40,13 @@ services:
       dockerfile: docker/Dockerfile
     volumes:
       - ./:/var/www/html
+      - ./docker/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
     env_file: .env
+    environment:
+      <<: *app-env
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_started
 
@@ -29,9 +57,15 @@ services:
     command: php artisan queue:work --tries=3 --timeout=120
     volumes:
       - ./:/var/www/html
+      - ./docker/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
     env_file: .env
+    environment:
+      <<: *app-env
     depends_on:
-      - php
+      php:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   scheduler:
     build:
@@ -40,9 +74,15 @@ services:
     command: php artisan schedule:work
     volumes:
       - ./:/var/www/html
+      - ./docker/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
     env_file: .env
+    environment:
+      <<: *app-env
     depends_on:
-      - php
+      php:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
@@ -51,9 +91,15 @@ services:
       POSTGRES_USER: exoplanet
       POSTGRES_PASSWORD: exoplanet
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exoplanet -d exoplanet"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
 
   minio:
     image: minio/minio:latest
@@ -61,6 +107,7 @@ services:
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio12345
+      MINIO_API_CORS_ALLOW_ORIGIN: "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080"
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -70,13 +117,15 @@ services:
   minio-init:
     image: minio/mc:latest
     depends_on:
-      - minio
+      minio:
+        condition: service_started
+    restart: on-failure
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio12345
     volumes:
       - ./docker/minio-init.sh:/init.sh:ro
-      - ./docker/minio-cors.json:/config/cors.json:ro
+      - ./docker/minio-cors.xml:/config/cors.xml:ro
     entrypoint: ["/bin/sh", "/init.sh"]
 
   mailpit:
