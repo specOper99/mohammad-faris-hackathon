@@ -28,8 +28,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         $middleware->statefulApi();
+        $middleware->append(CorrelationId::class);
         $middleware->api(prepend: [
-            CorrelationId::class,
             SetLocale::class,
             RequestLog::class,
         ]);
@@ -38,42 +38,69 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
-        );
+        $api = fn (Request $request): bool => $request->is('api/*') || $request->expectsJson();
+
+        $exceptions->shouldRenderJsonWhen($api);
 
         $exceptions->render(function (AppException $e, Request $request) {
             return ApiResponse::error($e->errorCode, $e->getMessage(), $e->status, $e->errors);
         });
 
-        $exceptions->render(function (ValidationException $e, Request $request) {
+        $exceptions->render(function (ValidationException $e, Request $request) use ($api) {
+            if (! $api($request)) {
+                return null;
+            }
+
             return ApiResponse::error('VALIDATION_FAILED', trans('messages.VALIDATION_FAILED'), 422, $e->errors());
         });
 
-        $exceptions->render(function (AuthenticationException $e, Request $request) {
+        $exceptions->render(function (AuthenticationException $e, Request $request) use ($api) {
+            if (! $api($request)) {
+                return null;
+            }
+
             return ApiResponse::error('UNAUTHORIZED', trans('messages.UNAUTHORIZED'), 401);
         });
 
-        $exceptions->render(function (AuthorizationException $e, Request $request) {
+        $exceptions->render(function (AuthorizationException $e, Request $request) use ($api) {
+            if (! $api($request)) {
+                return null;
+            }
+
             return ApiResponse::error('FORBIDDEN', trans('messages.FORBIDDEN'), 403);
         });
 
-        $exceptions->render(function (ModelNotFoundException $e, Request $request) {
+        $exceptions->render(function (ModelNotFoundException $e, Request $request) use ($api) {
+            if (! $api($request)) {
+                return null;
+            }
+
             return ApiResponse::error('NOT_FOUND', trans('messages.NOT_FOUND'), 404);
         });
 
-        $exceptions->render(function (NotFoundHttpException $e, Request $request) {
+        $exceptions->render(function (NotFoundHttpException $e, Request $request) use ($api) {
+            if (! $api($request)) {
+                return null;
+            }
+
             return ApiResponse::error('NOT_FOUND', trans('messages.NOT_FOUND'), 404);
         });
 
-        $exceptions->render(function (TooManyRequestsHttpException $e, Request $request) {
+        $exceptions->render(function (TooManyRequestsHttpException $e, Request $request) use ($api) {
+            if (! $api($request)) {
+                return null;
+            }
+
             $retry = $e->getHeaders()['Retry-After'] ?? 60;
 
             return ApiResponse::error('RATE_LIMITED', trans('messages.RATE_LIMITED'), 429)
                 ->header('Retry-After', (string) $retry);
         });
 
-        $exceptions->render(function (HttpException $e, Request $request) {
+        $exceptions->render(function (HttpException $e, Request $request) use ($api) {
+            if (! $api($request)) {
+                return null;
+            }
             if ($e->getStatusCode() === 403) {
                 return ApiResponse::error('FORBIDDEN', trans('messages.FORBIDDEN'), 403);
             }
@@ -81,11 +108,11 @@ return Application::configure(basePath: dirname(__DIR__))
             return null;
         });
 
-        $exceptions->render(function (Throwable $e, Request $request) {
+        $exceptions->render(function (Throwable $e, Request $request) use ($api) {
             if ($e instanceof AppException) {
                 return null;
             }
-            if (! $request->is('api/*') && ! $request->expectsJson()) {
+            if (! $api($request)) {
                 return null;
             }
 

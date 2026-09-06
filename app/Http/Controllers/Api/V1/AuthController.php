@@ -12,14 +12,22 @@ use App\Actions\Auth\RegisterTeamAction;
 use App\Actions\Auth\ResendActivationAction;
 use App\Actions\Auth\ResetPasswordAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\AcceptInvitationRequest;
+use App\Http\Requests\Auth\ActivateAccountRequest;
+use App\Http\Requests\Auth\ForgotPasswordRequest;
+use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterTeamRequest;
+use App\Http\Requests\Auth\ResendActivationRequest;
+use App\Http\Requests\Auth\ResetPasswordRequest;
+use App\Http\Resources\UserResource;
 use App\Support\ApiResponse;
 use App\Support\CurrentUser;
-use App\Support\PasswordRules;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
+#[Group('Auth', weight: 1)]
 final class AuthController extends Controller
 {
     public function register(RegisterTeamRequest $request, RegisterTeamAction $action): JsonResponse
@@ -27,31 +35,30 @@ final class AuthController extends Controller
         return ApiResponse::created($action->execute($request->toData()));
     }
 
-    public function activate(Request $request, ActivateAccountAction $action): JsonResponse
+    public function activate(ActivateAccountRequest $request, ActivateAccountAction $action): JsonResponse
     {
-        $data = $request->validate(['token' => ['required', 'string']]);
-
-        return ApiResponse::success($action->execute($data['token']));
+        return ApiResponse::success($action->execute((string) $request->validated('token')));
     }
 
-    public function resendActivation(Request $request, ResendActivationAction $action): JsonResponse
+    public function resendActivation(ResendActivationRequest $request, ResendActivationAction $action): JsonResponse
     {
-        $data = $request->validate(['email' => ['required', 'email']]);
-        $action->execute($data['email']);
+        $action->execute((string) $request->validated('email'));
 
         return ApiResponse::success(['ok' => true]);
     }
 
-    public function login(Request $request, LoginAction $action): JsonResponse
+    public function login(LoginRequest $request, LoginAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
-        ]);
+        $user = $action->execute(
+            (string) $request->validated('email'),
+            (string) $request->validated('password'),
+            (string) $request->ip(),
+        );
 
-        return ApiResponse::success($action->execute($data['email'], $data['password'], (string) $request->ip()));
+        return ApiResponse::success(['user' => new UserResource($user)]);
     }
 
+    #[Endpoint(description: 'Destroy the current Sanctum session cookie. No request body.')]
     public function logout(LogoutAction $action): Response
     {
         $action->execute();
@@ -59,6 +66,7 @@ final class AuthController extends Controller
         return ApiResponse::noContent();
     }
 
+    #[Endpoint(description: 'Destroy all sessions for the current user. No request body.')]
     public function logoutAll(LogoutAllAction $action): Response
     {
         $action->execute(CurrentUser::require());
@@ -66,36 +74,30 @@ final class AuthController extends Controller
         return ApiResponse::noContent();
     }
 
-    public function forgotPassword(Request $request, ForgotPasswordAction $action): JsonResponse
+    public function forgotPassword(ForgotPasswordRequest $request, ForgotPasswordAction $action): JsonResponse
     {
-        $data = $request->validate(['email' => ['required', 'email']]);
-        $action->execute($data['email']);
+        $action->execute((string) $request->validated('email'));
 
         return ApiResponse::success(['ok' => true]);
     }
 
-    public function resetPassword(Request $request, ResetPasswordAction $action): JsonResponse
+    public function resetPassword(ResetPasswordRequest $request, ResetPasswordAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'token' => ['required', 'string'],
-            'password' => array_merge(PasswordRules::rules(), ['same:confirmPassword']),
-            'confirmPassword' => ['required'],
-        ]);
-        $action->execute($data['token'], $data['password']);
+        $data = $request->validated();
+        $action->execute((string) $data['token'], (string) $data['password']);
 
         return ApiResponse::success(['ok' => true]);
     }
 
-    public function acceptInvitation(Request $request, AcceptInvitationAction $action): JsonResponse
+    public function acceptInvitation(AcceptInvitationRequest $request, AcceptInvitationAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'token' => ['required', 'string'],
-            'password' => array_merge(PasswordRules::rules(), ['same:confirmPassword']),
-            'confirmPassword' => ['required'],
-            'firstName' => ['nullable', 'string', 'max:100'],
-            'lastName' => ['nullable', 'string', 'max:100'],
-        ]);
-        $action->execute($data['token'], $data['password'], $data['firstName'] ?? null, $data['lastName'] ?? null);
+        $data = $request->validated();
+        $action->execute(
+            (string) $data['token'],
+            (string) $data['password'],
+            isset($data['firstName']) ? (string) $data['firstName'] : null,
+            isset($data['lastName']) ? (string) $data['lastName'] : null,
+        );
 
         return ApiResponse::success(['ok' => true]);
     }

@@ -20,6 +20,21 @@ use App\Exports\EvaluationsExport;
 use App\Exports\SubmissionsExport;
 use App\Exports\TeamsExport;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\AssignJudgeRequest;
+use App\Http\Requests\Admin\CreateJudgeRequest;
+use App\Http\Requests\Admin\ReopenSubmissionRequest;
+use App\Http\Requests\Admin\ReplaceCriteriaRequest;
+use App\Http\Requests\Admin\SetUserActiveRequest;
+use App\Http\Requests\Admin\StoreTrackRequest;
+use App\Http\Requests\Admin\TransferLeadershipRequest;
+use App\Http\Requests\Admin\UpdateAdminTeamRequest;
+use App\Http\Requests\Admin\UpdateJudgeRequest;
+use App\Http\Requests\Admin\UpdatePublicationRequest;
+use App\Http\Requests\Admin\UpdateSettingsRequest;
+use App\Http\Requests\Admin\UpdateSubmissionStatusRequest;
+use App\Http\Requests\Admin\UpdateTeamStatusRequest;
+use App\Http\Requests\Admin\UpdateTrackRequest;
+use App\Http\Requests\Members\InviteMemberRequest;
 use App\Http\Resources\SubmissionResource;
 use App\Http\Resources\TeamResource;
 use App\Http\Resources\TrackResource;
@@ -37,6 +52,8 @@ use App\Support\AppException;
 use App\Support\AuditLogger;
 use App\Support\CurrentUser;
 use App\Support\Pagination;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,6 +62,7 @@ use Maatwebsite\Excel\Excel as ExcelFormat;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
+#[Group('Admin', weight: 8)]
 final class AdminController extends Controller
 {
     public function dashboard(DashboardAction $action): JsonResponse
@@ -72,25 +90,23 @@ final class AdminController extends Controller
         return ApiResponse::success((new TeamResource($team))->resolve($request));
     }
 
-    public function updateTeam(Request $request, string $id, AdminMutationsAction $action): JsonResponse
+    public function updateTeam(UpdateAdminTeamRequest $request, string $id): JsonResponse
     {
         $team = Team::query()->findOrFail($id);
+        $data = $request->validated();
         $team->fill([
-            'name' => $request->input('name', $team->name),
-            'university' => $request->input('university', $team->university),
-            'city' => $request->input('city', $team->city),
+            'name' => $data['name'] ?? $team->name,
+            'university' => $data['university'] ?? $team->university,
+            'city' => $data['city'] ?? $team->city,
         ]);
         $team->save();
 
         return ApiResponse::success((new TeamResource($team->fresh(['members.user', 'track', 'leader'])))->resolve($request));
     }
 
-    public function teamStatus(Request $request, string $id, AdminMutationsAction $action): JsonResponse
+    public function teamStatus(UpdateTeamStatusRequest $request, string $id, AdminMutationsAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'status' => ['required', 'string'],
-            'reason' => ['nullable', 'string', 'max:1000'],
-        ]);
+        $data = $request->validated();
         $team = Team::query()->findOrFail($id);
         $status = TeamStatus::from($data['status']);
         $action->updateTeamStatus($team, $status, $data['reason'] ?? null);
@@ -98,27 +114,19 @@ final class AdminController extends Controller
         return ApiResponse::success(['id' => $team->id, 'status' => $team->status->value]);
     }
 
-    public function transferLeadership(Request $request, string $id, AdminMutationsAction $action): JsonResponse
+    public function transferLeadership(TransferLeadershipRequest $request, string $id, AdminMutationsAction $action): JsonResponse
     {
-        $data = $request->validate(['newLeaderUserId' => ['required', 'uuid']]);
         $team = Team::query()->findOrFail($id);
-        $action->transferLeadership($team, $data['newLeaderUserId']);
+        $action->transferLeadership($team, (string) $request->validated('newLeaderUserId'));
 
         return ApiResponse::success(['ok' => true]);
     }
 
-    public function inviteMember(Request $request, string $id, InviteMemberAction $invite): JsonResponse
+    public function inviteMember(InviteMemberRequest $request, string $id, InviteMemberAction $invite): JsonResponse
     {
         $team = Team::query()->findOrFail($id);
-        // Admin invite: temporarily act as leader context by using admin + team leader path
-        $data = $request->validate([
-            'firstName' => ['required', 'string'],
-            'lastName' => ['required', 'string'],
-            'email' => ['required', 'email'],
-            'skill' => ['nullable', 'string'],
-        ]);
         $leader = $team->leader;
-        $member = $invite->execute($leader, $data);
+        $member = $invite->execute($leader, $request->validated());
 
         return ApiResponse::created(['id' => $member->id]);
     }
@@ -145,16 +153,16 @@ final class AdminController extends Controller
         return ApiResponse::paged($items, $page, $size, $total);
     }
 
-    public function setActive(Request $request, string $id): JsonResponse
+    public function setActive(SetUserActiveRequest $request, string $id): JsonResponse
     {
-        $data = $request->validate(['isActive' => ['required', 'boolean']]);
         $user = User::query()->withDeleted()->findOrFail($id);
-        $user->is_active = $data['isActive'];
+        $user->is_active = $request->boolean('isActive');
         $user->save();
 
         return ApiResponse::success(['id' => $user->id, 'isActive' => $user->is_active]);
     }
 
+    #[Endpoint(description: 'Delete all sessions for the user. No request body.')]
     public function forceLogout(string $id): JsonResponse
     {
         DB::table('sessions')->where('user_id', $id)->delete();
@@ -162,17 +170,9 @@ final class AdminController extends Controller
         return ApiResponse::success(['ok' => true]);
     }
 
-    public function createJudge(Request $request, CreateJudgeAction $action): JsonResponse
+    public function createJudge(CreateJudgeRequest $request, CreateJudgeAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'email' => ['required', 'email'],
-            'firstName' => ['required', 'string'],
-            'lastName' => ['required', 'string'],
-            'password' => ['nullable', 'string', 'min:10'],
-            'specialization' => ['nullable', 'string'],
-            'sendInviteEmail' => ['sometimes', 'boolean'],
-        ]);
-        $profile = $action->execute(CurrentUser::require(), $data);
+        $profile = $action->execute(CurrentUser::require(), $request->validated());
 
         return ApiResponse::created(['id' => $profile->id, 'userId' => $profile->user_id]);
     }
@@ -191,25 +191,24 @@ final class AdminController extends Controller
         ]);
     }
 
-    public function updateJudge(Request $request, string $id): JsonResponse
+    public function updateJudge(UpdateJudgeRequest $request, string $id): JsonResponse
     {
         $p = JudgeProfile::query()->findOrFail($id);
-        $p->specialization = $request->input('specialization', $p->specialization);
-        if ($request->has('isActive')) {
-            $p->is_active = $request->boolean('isActive');
+        $data = $request->validated();
+        if (array_key_exists('specialization', $data)) {
+            $p->specialization = $data['specialization'];
+        }
+        if (array_key_exists('isActive', $data)) {
+            $p->is_active = (bool) $data['isActive'];
         }
         $p->save();
 
         return ApiResponse::success(['id' => $p->id, 'isActive' => $p->is_active]);
     }
 
-    public function assign(Request $request, AssignJudgeAction $action): JsonResponse
+    public function assign(AssignJudgeRequest $request, AssignJudgeAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'judgeProfileId' => ['required', 'uuid'],
-            'submissionId' => ['required', 'uuid'],
-        ]);
-        $a = $action->execute(CurrentUser::require(), $data);
+        $a = $action->execute(CurrentUser::require(), $request->validated());
 
         return ApiResponse::created(['id' => $a->id]);
     }
@@ -247,28 +246,27 @@ final class AdminController extends Controller
         return ApiResponse::success((new SubmissionResource($s))->resolve($request));
     }
 
-    public function submissionStatus(Request $request, string $id, ChangeSubmissionStatusAction $action): JsonResponse
+    public function submissionStatus(UpdateSubmissionStatusRequest $request, string $id, ChangeSubmissionStatusAction $action): JsonResponse
     {
-        $data = $request->validate(['status' => ['required', 'string']]);
         $s = Submission::query()->findOrFail($id);
-        $action->execute(CurrentUser::require(), $s, SubmissionStatus::from($data['status']));
+        $action->execute(CurrentUser::require(), $s, SubmissionStatus::from((string) $request->validated('status')));
 
         return ApiResponse::success(['id' => $s->id, 'status' => $s->fresh()->status->value]);
     }
 
-    public function reopenSubmission(Request $request, string $id, ChangeSubmissionStatusAction $action): JsonResponse
+    public function reopenSubmission(ReopenSubmissionRequest $request, string $id, ChangeSubmissionStatusAction $action): JsonResponse
     {
         $s = Submission::query()->findOrFail($id);
-        $action->reopen(CurrentUser::require(), $s, $request->input('unlockUntil'));
+        $unlockUntil = $request->validated('unlockUntil');
+        $action->reopen(CurrentUser::require(), $s, is_string($unlockUntil) ? $unlockUntil : null);
 
         return ApiResponse::success(['id' => $s->id, 'status' => $s->status->value, 'reopenCount' => $s->reopen_count]);
     }
 
-    public function publication(Request $request, string $id): JsonResponse
+    public function publication(UpdatePublicationRequest $request, string $id): JsonResponse
     {
-        $data = $request->validate(['publicationStatus' => ['required', 'string']]);
         $s = Submission::query()->findOrFail($id);
-        $s->publication_status = PublicationStatus::from($data['publicationStatus']);
+        $s->publication_status = PublicationStatus::from((string) $request->validated('publicationStatus'));
         $s->save();
 
         return ApiResponse::success(['id' => $s->id, 'publicationStatus' => $s->publication_status->value]);
@@ -292,6 +290,7 @@ final class AdminController extends Controller
         return ApiResponse::paged($items, $page, $size, $total);
     }
 
+    #[Endpoint(description: 'Return a submitted evaluation to draft. No request body.')]
     public function reopenEvaluation(string $id, ReopenEvaluationAction $action): JsonResponse
     {
         $e = Evaluation::query()->findOrFail($id);
@@ -308,17 +307,9 @@ final class AdminController extends Controller
         return ApiResponse::success(['submissionId' => $s->id, 'aggregatedScore' => $s->fresh()->aggregated_score]);
     }
 
-    public function storeTrack(Request $request): JsonResponse
+    public function storeTrack(StoreTrackRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'code' => ['required', 'size:1', 'unique:tracks,code'],
-            'nameEn' => ['required', 'string'],
-            'nameAr' => ['required', 'string'],
-            'difficulty' => ['required', 'string'],
-            'focusEn' => ['nullable', 'string'],
-            'focusAr' => ['nullable', 'string'],
-            'isActive' => ['sometimes', 'boolean'],
-        ]);
+        $data = $request->validated();
         $track = Track::query()->create([
             'code' => strtoupper($data['code']),
             'name_en' => $data['nameEn'],
@@ -333,14 +324,15 @@ final class AdminController extends Controller
         return ApiResponse::created((new TrackResource($track))->resolve());
     }
 
-    public function updateTrack(Request $request, string $id): JsonResponse
+    public function updateTrack(UpdateTrackRequest $request, string $id): JsonResponse
     {
         $track = Track::query()->findOrFail($id);
+        $data = $request->validated();
         $track->fill([
-            'name_en' => $request->input('nameEn', $track->name_en),
-            'name_ar' => $request->input('nameAr', $track->name_ar),
-            'is_active' => $request->has('isActive') ? $request->boolean('isActive') : $track->is_active,
-            'difficulty' => $request->input('difficulty', $track->difficulty),
+            'name_en' => $data['nameEn'] ?? $track->name_en,
+            'name_ar' => $data['nameAr'] ?? $track->name_ar,
+            'is_active' => array_key_exists('isActive', $data) ? (bool) $data['isActive'] : $track->is_active,
+            'difficulty' => $data['difficulty'] ?? $track->difficulty,
         ]);
         $track->save();
 
@@ -361,20 +353,11 @@ final class AdminController extends Controller
         ])->all());
     }
 
-    public function replaceCriteria(Request $request, AdminMutationsAction $action, WeightSumValidator $validator): JsonResponse
+    public function replaceCriteria(ReplaceCriteriaRequest $request, AdminMutationsAction $action, WeightSumValidator $validator): JsonResponse
     {
-        $data = $request->validate([
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.code' => ['required', 'string'],
-            'items.*.nameEn' => ['required', 'string'],
-            'items.*.nameAr' => ['required', 'string'],
-            'items.*.weight' => ['required', 'numeric'],
-            'items.*.minScore' => ['nullable', 'integer'],
-            'items.*.maxScore' => ['nullable', 'integer'],
-            'items.*.sortOrder' => ['nullable', 'integer'],
-            'items.*.isActive' => ['nullable', 'boolean'],
-        ]);
-        $action->replaceCriteria($data['items'], $validator);
+        /** @var list<array<string, mixed>> $items */
+        $items = $request->validated('items');
+        $action->replaceCriteria($items, $validator);
 
         return $this->criteria();
     }
@@ -405,9 +388,9 @@ final class AdminController extends Controller
         ]);
     }
 
-    public function updateSettings(Request $request, AdminMutationsAction $action): JsonResponse
+    public function updateSettings(UpdateSettingsRequest $request, AdminMutationsAction $action): JsonResponse
     {
-        $s = $action->updateSettings(ChallengeSettings::current(), $request->all(), CurrentUser::require());
+        $s = $action->updateSettings(ChallengeSettings::current(), $request->validated(), CurrentUser::require());
 
         return ApiResponse::success(['id' => $s->id, 'version' => $s->version]);
     }

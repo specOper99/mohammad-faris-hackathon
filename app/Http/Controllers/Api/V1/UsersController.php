@@ -5,13 +5,15 @@ namespace App\Http\Controllers\Api\V1;
 use App\Actions\Users\ChangePasswordAction;
 use App\Actions\Users\UpdateProfileAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Users\ChangePasswordRequest;
+use App\Http\Requests\Users\UpdateProfileRequest;
 use App\Http\Resources\UserResource;
 use App\Support\ApiResponse;
 use App\Support\CurrentUser;
-use App\Support\PasswordRules;
+use Dedoc\Scramble\Attributes\Group;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
+#[Group('Users', weight: 4)]
 final class UsersController extends Controller
 {
     public function me(): JsonResponse
@@ -21,27 +23,16 @@ final class UsersController extends Controller
         return ApiResponse::success((new UserResource($user))->resolve());
     }
 
-    public function updateMe(Request $request, UpdateProfileAction $action): JsonResponse
+    public function updateMe(UpdateProfileRequest $request, UpdateProfileAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'firstName' => ['sometimes', 'string', 'max:100'],
-            'lastName' => ['sometimes', 'string', 'max:100'],
-            'phone' => ['nullable', 'regex:/^\+[0-9]{8,15}$/'],
-            'locale' => ['sometimes', 'in:en,ar'],
-        ]);
-        $user = $action->execute(CurrentUser::require(), $data);
+        $user = $action->execute(CurrentUser::require(), $request->validated());
 
         return ApiResponse::success((new UserResource($user->load('roles')))->resolve());
     }
 
-    public function updatePassword(Request $request, ChangePasswordAction $action): JsonResponse
+    public function updatePassword(ChangePasswordRequest $request, ChangePasswordAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'current' => ['required', 'string'],
-            'new' => array_merge(PasswordRules::rules(), ['same:confirm']),
-            'confirm' => ['required'],
-        ]);
-        $action->execute(CurrentUser::require(), $data);
+        $action->execute(CurrentUser::require(), $request->validated());
 
         return ApiResponse::success(['ok' => true]);
     }

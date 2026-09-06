@@ -3,7 +3,6 @@
 namespace App\Actions\Auth;
 
 use App\Enums\AuditAction;
-use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Support\AppException;
 use App\Support\AuditLogger;
@@ -16,10 +15,7 @@ final class LoginAction
 {
     public function __construct(private AuditLogger $audit) {}
 
-    /**
-     * @return array{user: array<string, mixed>}
-     */
-    public function execute(string $email, string $password, string $ip): array
+    public function execute(string $email, string $password, string $ip): User
     {
         $lockKey = 'login-lockout:'.Str::lower($email).'|'.$ip;
         if (RateLimiter::tooManyAttempts($lockKey, 5)) {
@@ -50,6 +46,6 @@ final class LoginAction
         $user->save();
         $this->audit->write(AuditAction::AUTH_LOGIN, $user, null, ['email' => $user->email], $user);
 
-        return ['user' => (new UserResource($user->load('roles')))->resolve()];
+        return $user->load('roles');
     }
 }

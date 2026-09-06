@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Public\PublicReadAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ContactRequest;
 use App\Support\ApiResponse;
+use Dedoc\Scramble\Attributes\Group;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
+#[Group('Public', weight: 2)]
 final class PublicController extends Controller
 {
     public function settings(PublicReadAction $action): JsonResponse
@@ -20,15 +22,9 @@ final class PublicController extends Controller
         return ApiResponse::success($action->criteria());
     }
 
-    public function contact(Request $request, PublicReadAction $action): JsonResponse
+    public function contact(ContactRequest $request, PublicReadAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:200'],
-            'email' => ['required', 'email'],
-            'subject' => ['required', 'string', 'max:200'],
-            'message' => ['required', 'string', 'max:2000'],
-        ]);
-        $action->contact($data, (string) $request->ip());
+        $action->contact($request->validated(), (string) $request->ip());
 
         return ApiResponse::success(['ok' => true]);
     }

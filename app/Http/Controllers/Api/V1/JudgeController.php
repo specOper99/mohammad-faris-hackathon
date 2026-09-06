@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Actions\Judging\UpsertEvaluationAction;
 use App\Domain\Scoring\ScoreCalculator;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Judge\UpdateEvaluationRequest;
 use App\Http\Resources\SubmissionResource;
 use App\Models\Evaluation;
 use App\Models\JudgeAssignment;
@@ -13,10 +14,13 @@ use App\Support\ApiResponse;
 use App\Support\AuditLogger;
 use App\Support\CurrentUser;
 use App\Support\Pagination;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+#[Group('Judge', weight: 7)]
 final class JudgeController extends Controller
 {
     public function submissions(Request $request): JsonResponse
@@ -92,20 +96,15 @@ final class JudgeController extends Controller
         ] : null);
     }
 
-    public function updateEvaluation(Request $request, string $id, UpsertEvaluationAction $action): JsonResponse
+    public function updateEvaluation(UpdateEvaluationRequest $request, string $id, UpsertEvaluationAction $action): JsonResponse
     {
         $sub = Submission::query()->findOrFail($id);
-        $eval = $action->execute(CurrentUser::require(), $sub, $request->validate([
-            'comments' => ['nullable', 'string'],
-            'version' => ['nullable', 'integer'],
-            'scores' => ['array'],
-            'scores.*.criterionId' => ['required', 'uuid'],
-            'scores.*.score' => ['required', 'integer'],
-        ]));
+        $eval = $action->execute(CurrentUser::require(), $sub, $request->validated());
 
         return ApiResponse::success(['id' => $eval->id, 'status' => $eval->status->value, 'version' => $eval->version]);
     }
 
+    #[Endpoint(description: 'Submit the evaluation. No request body.')]
     public function submitEvaluation(string $id, UpsertEvaluationAction $action, ScoreCalculator $calc, AuditLogger $audit): JsonResponse
     {
         $sub = Submission::query()->findOrFail($id);

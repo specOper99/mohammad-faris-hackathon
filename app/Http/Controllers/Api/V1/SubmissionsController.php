@@ -11,6 +11,9 @@ use App\Actions\Submissions\GetOrCreateDraftAction;
 use App\Actions\Submissions\SubmitSubmissionAction;
 use App\Actions\Submissions\UpdateSubmissionAction;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Submissions\CompleteUploadRequest;
+use App\Http\Requests\Submissions\InitiateUploadRequest;
+use App\Http\Requests\Submissions\UpdateSubmissionRequest;
 use App\Http\Resources\SubmissionResource;
 use App\Models\ChallengeSettings;
 use App\Models\Submission;
@@ -19,10 +22,12 @@ use App\Support\ApiResponse;
 use App\Support\AppException;
 use App\Support\CurrentUser;
 use App\Support\MembershipGuard;
+use Dedoc\Scramble\Attributes\Endpoint;
+use Dedoc\Scramble\Attributes\Group;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
+#[Group('Submissions', weight: 6)]
 final class SubmissionsController extends Controller
 {
     public function store(GetOrCreateDraftAction $action): JsonResponse
@@ -54,17 +59,18 @@ final class SubmissionsController extends Controller
         return ApiResponse::success((new SubmissionResource($sub))->resolve(request()));
     }
 
-    public function update(Request $request, string $id, UpdateSubmissionAction $action): JsonResponse
+    public function update(UpdateSubmissionRequest $request, string $id, UpdateSubmissionAction $action): JsonResponse
     {
         $sub = Submission::query()->find($id);
         if ($sub === null) {
             throw (new ModelNotFoundException)->setModel(Submission::class);
         }
-        $updated = $action->execute(CurrentUser::require(), $sub, $request->all());
+        $updated = $action->execute(CurrentUser::require(), $sub, $request->validated());
 
         return ApiResponse::success((new SubmissionResource($updated))->resolve($request));
     }
 
+    #[Endpoint(description: 'Lock and submit the draft. No request body. Send Idempotency-Key.')]
     public function submit(string $id, SubmitSubmissionAction $action): JsonResponse
     {
         $sub = Submission::query()->find($id);
@@ -76,24 +82,17 @@ final class SubmissionsController extends Controller
         return ApiResponse::success((new SubmissionResource($updated))->resolve(request()));
     }
 
-    public function initiateUpload(Request $request, string $id, InitiateUploadAction $action): JsonResponse
+    public function initiateUpload(InitiateUploadRequest $request, string $id, InitiateUploadAction $action): JsonResponse
     {
         $sub = Submission::query()->findOrFail($id);
-        $data = $request->validate([
-            'fileType' => ['required', 'string'],
-            'fileName' => ['required', 'string', 'max:200'],
-            'mimeType' => ['required', 'string'],
-            'sizeBytes' => ['required', 'integer', 'min:1'],
-            'partSizeBytes' => ['nullable', 'integer', 'min:1'],
-        ]);
 
-        return ApiResponse::success($action->execute(CurrentUser::require(), $sub, $data));
+        return ApiResponse::success($action->execute(CurrentUser::require(), $sub, $request->validated()));
     }
 
-    public function completeUpload(Request $request, string $id, string $sessionId, CompleteUploadAction $action): JsonResponse
+    public function completeUpload(CompleteUploadRequest $request, string $id, string $sessionId, CompleteUploadAction $action): JsonResponse
     {
         $sub = Submission::query()->findOrFail($id);
-        $file = $action->execute(CurrentUser::require(), $sub, $sessionId, $request->all());
+        $file = $action->execute(CurrentUser::require(), $sub, $sessionId, $request->validated());
 
         return ApiResponse::created([
             'id' => $file->id,
@@ -104,6 +103,7 @@ final class SubmissionsController extends Controller
         ]);
     }
 
+    #[Endpoint(description: 'Abort an in-progress presigned upload. No request body.')]
     public function abortUpload(string $id, string $sessionId, AbortUploadAction $action): JsonResponse
     {
         $sub = Submission::query()->findOrFail($id);
@@ -127,6 +127,7 @@ final class SubmissionsController extends Controller
         return ApiResponse::success($action->execute(CurrentUser::require(), $sub, $fileId));
     }
 
+    #[Endpoint(description: 'Direct upload is disabled. Initiate a presigned session via POST /api/v1/submissions/{id}/files/uploads.')]
     public function directUpload(string $id): JsonResponse
     {
         $cap = ChallengeSettings::current()->allow_direct_upload_below_bytes;

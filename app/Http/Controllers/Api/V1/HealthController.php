@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Services\Storage\ObjectStorage;
 use App\Support\ApiResponse;
+use Dedoc\Scramble\Attributes\Group;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
+#[Group('Health', weight: 0)]
 final class HealthController extends Controller
 {
     public function ready(ObjectStorage $storage): JsonResponse

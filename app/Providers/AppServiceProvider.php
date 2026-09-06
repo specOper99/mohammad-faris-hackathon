@@ -16,6 +16,9 @@ use App\Services\Storage\ObjectStorage;
 use App\Services\Storage\S3ObjectStorage;
 use App\Support\Clock;
 use App\Support\SystemClock;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\Server;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -50,9 +53,22 @@ class AppServiceProvider extends ServiceProvider
         GateFacade::policy(Submission::class, SubmissionPolicy::class);
         GateFacade::policy(Evaluation::class, EvaluationPolicy::class);
 
-        GateFacade::define('viewApiDocs', function ($user = null) {
+        // First argument must be optional so guests can pass RestrictedDocsAccess
+        // when APP_ENV is not local (Pest uses testing). Docker Compose sets APP_ENV=local.
+        GateFacade::define('viewApiDocs', function ($user = null): bool {
             return ! $this->app->isProduction();
         });
+
+        Scramble::configure()
+            ->expose(
+                ui: '/docs/api',
+                document: '/docs/api.json',
+            )
+            ->withDocumentTransformers(function (OpenApi $openApi): void {
+                $openApi->servers = [
+                    Server::make(rtrim((string) config('app.url'), '/'))->setDescription('This environment'),
+                ];
+            });
 
         Event::listen(NotificationSent::class, [UpdateEmailOutbox::class, 'handleSent']);
         Event::listen(NotificationFailed::class, [UpdateEmailOutbox::class, 'handleFailed']);

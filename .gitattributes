@@ -1,5 +1,12 @@
 * text=auto eol=lf
 
+*.sh text eol=lf
+docker/entrypoint.sh text eol=lf
+docker/*.conf text eol=lf
+docker/*.xml text eol=lf
+docker/*.json text eol=lf
+*.blade.php diff=html
+
 *.blade.php diff=html
 *.css diff=css
 *.html diff=html
