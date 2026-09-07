@@ -64,6 +64,19 @@ docker compose up --build
 
 `-v` deletes the `php_vendor` volume (safe). Recreates Postgres/MinIO data too.
 
+### `Class "Dedoc\Scramble\Support\Generator\SecurityScheme" not found`
+
+Windows Docker: stale `php_vendor` volume (old `--no-dev` install without Scramble). Config no longer instantiates that class at boot; entrypoint also reinstalls vendor if autoload is broken. Still stuck? Wipe only the vendor volume (keeps DB):
+
+```bash
+docker compose down
+docker volume ls
+docker volume rm mohammad-faris-hackathon_php_vendor
+docker compose up --build
+```
+
+Volume name is `<compose-project>_php_vendor`. If the `rm` name is wrong, copy it from `docker volume ls`.
+
 ### PHP exits 255
 
 ```bash

@@ -1,8 +1,7 @@
 <?php
 
+use App\Support\SanctumCookieAuthSecurityStrategy;
 use Dedoc\Scramble\Http\Middleware\RestrictedDocsAccess;
-use Dedoc\Scramble\SecurityDocumentation\MiddlewareAuthSecurityStrategy;
-use Dedoc\Scramble\Support\Generator\SecurityScheme;
 
 return [
     /*
@@ -86,11 +85,5 @@ MD,
 
     'extensions' => [],
 
-    'security_strategy' => [
-        MiddlewareAuthSecurityStrategy::class,
-        [
-            'middleware' => ['auth', 'auth:*'],
-            'scheme' => SecurityScheme::apiKey('cookie', 'laravel_session')->as('sanctumCookie'),
-        ],
-    ],
+    'security_strategy' => SanctumCookieAuthSecurityStrategy::class,
 ];

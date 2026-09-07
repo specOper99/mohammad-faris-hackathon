@@ -59,16 +59,18 @@ class AppServiceProvider extends ServiceProvider
             return ! $this->app->isProduction();
         });
 
-        Scramble::configure()
-            ->expose(
-                ui: '/docs/api',
-                document: '/docs/api.json',
-            )
-            ->withDocumentTransformers(function (OpenApi $openApi): void {
-                $openApi->servers = [
-                    Server::make(rtrim((string) config('app.url'), '/'))->setDescription('This environment'),
-                ];
-            });
+        if (class_exists(Scramble::class)) {
+            Scramble::configure()
+                ->expose(
+                    ui: '/docs/api',
+                    document: '/docs/api.json',
+                )
+                ->withDocumentTransformers(function (OpenApi $openApi): void {
+                    $openApi->servers = [
+                        Server::make(rtrim((string) config('app.url'), '/'))->setDescription('This environment'),
+                    ];
+                });
+        }
 
         Event::listen(NotificationSent::class, [UpdateEmailOutbox::class, 'handleSent']);
         Event::listen(NotificationFailed::class, [UpdateEmailOutbox::class, 'handleFailed']);

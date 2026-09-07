@@ -72,13 +72,27 @@ clear_bootstrap_cache() {
   rm -f bootstrap/cache/*.php
 }
 
+scramble_autoload_ok() {
+  [ -f vendor/autoload.php ] || return 1
+  php -r 'require "vendor/autoload.php"; exit(class_exists("Dedoc\\Scramble\\Support\\Generator\\SecurityScheme") ? 0 : 1);'
+}
+
+reset_vendor() {
+  echo "resetting vendor (dedoc/scramble missing or autoload broken)"
+  if [ -d vendor ]; then
+    find vendor -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+  fi
+  composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --no-scripts
+  composer dump-autoload --optimize --no-interaction --no-scripts
+}
+
 wait_for_vendor() {
-  echo "waiting for vendor/autoload.php..."
+  echo "waiting for vendor autoload (including scramble)..."
   j=0
-  until [ -f vendor/autoload.php ]; do
+  until scramble_autoload_ok; do
     j=$((j + 1))
     if [ "$j" -ge 90 ]; then
-      echo "vendor/autoload.php missing after 180s"
+      echo "vendor autoload missing scramble after 180s"
       exit 1
     fi
     sleep 2
@@ -100,6 +114,16 @@ if [ "$ROLE" = "fpm" ] || [ "$1" = "php-fpm" ]; then
     sleep 2
   done
   composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --no-scripts
+  composer dump-autoload --optimize --no-interaction --no-scripts
+  if ! scramble_autoload_ok; then
+    reset_vendor
+  fi
+  if ! scramble_autoload_ok; then
+    echo "FATAL: Dedoc\\Scramble\\Support\\Generator\\SecurityScheme not autoloadable after composer install"
+    ls -la vendor/dedoc 2>/dev/null || true
+    composer show dedoc/scramble || true
+    exit 1
+  fi
   rmdir "$composer_lock" 2>/dev/null || true
 
   ensure_app_key
